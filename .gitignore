@@ -1,0 +1,7 @@
+__pycache__/
+*.pt
+*.pth
+data/
+results/checkpoints/
+results/heatmaps/
+.DS_Store
