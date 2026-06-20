@@ -1,37 +1,29 @@
 """
-mask_loader.py: shared ground-truth lesion mask loader for IDRiD
+mask_loader.py: shared ground-truth lesion mask loader for IDRiD.
 
 Used by:
-- shreya (fidelity_scoring.py / stratify.py) for IoU/Dice computation
-- anyone who needs to freeze the fixed 81-image test ID list
+- Shreyashree (fidelity_scoring.py / stratify.py) for IoU/Dice computation
+- Anyone who needs to freeze the fixed test-image ID list
 
-Expected folder structure (official IDRiD release, zip A — Segmentation),
-rooted at <data_root>:
+ACTUAL Drive folder layout for this project:
 
-A. Segmentation/
-    1. Original Images/
-        a. Training Set/
-        b. Testing Set/
-    2. All Segmentation Groundtruths/
-        a. Training Set/
-            1. Microaneurysms/
-            2. Haemorrhages/
-            3. Hard Exudates/
-            4. Soft Exudates/
-            5. Optic Disc/
-        b. Testing Set/
-            (same 5 subfolders)
+<data_root>/                       (= .../data/IDRiD)
+└── segmentation/
+    ├── images/
+    │   ├── train/   IDRiD_01.jpg ... IDRiD_54.jpg
+    │   └── test/    IDRiD_55.jpg ... IDRiD_81.jpg
+    └── masks/
+        ├── train/
+        │   ├── 1. Microaneurysms/   IDRiD_01_MA.tif
+        │   ├── 2. Haemorrhages/     IDRiD_01_HE.tif
+        │   ├── 3. Hard Exudates/    IDRiD_01_EX.tif
+        │   ├── 4. Soft Exudates/    IDRiD_01_SE.tif
+        │   └── 5. Optic Disc/       IDRiD_01_OD.tif
+        └── test/
+            (same 5 subfolders, IDRiD_55_MA.tif etc.)
 
-Mask filename convention: IDRiD_<NN>_<SUFFIX>.tif
-  MA = Microaneurysms, HE = Haemorrhages, EX = Hard Exudates,
-  SE = Soft Exudates, OD = Optic Disc.
-Not every image has every lesion type - a missing file means that lesion
-is absent for that image; loader returns an all-zero mask in that case
-
-Note: 
-If our actual extracted folder names differ slightly (ordinal prefixes,
-spacing, "a."/"b." vs full words), adjust LESION_SUFFIX / split strings
-below — everything else stays the same
+Not every image has every lesion type - a missing mask file means that
+lesion is absent for that image; loader returns an all-zero mask.
 """
 
 import json
@@ -42,49 +34,36 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from PIL import Image
 
-LESION_SUFFIX = {
-    "MA": "Microaneurysms",
-    "HE": "Haemorrhages",
-    "EX": "Hard Exudates",
-    "SE": "Soft Exudates",
-    "OD": "Optic Disc",
+LESION_FOLDER = {
+    "MA": "1. Microaneurysms",
+    "HE": "2. Haemorrhages",
+    "EX": "3. Hard Exudates",
+    "SE": "4. Soft Exudates",
+    "OD": "5. Optic Disc",
 }
 
-# DR lesion types used for fidelity scoring (OD excluded - not a DR lesion)
+# DR lesion types used for fidelity scoring (OD excluded — not a DR lesion)
 LESION_TYPES = ["MA", "HE", "EX", "SE"]
 
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".tif", ".tiff")
 
 
 class MaskLoader:
-    def __init__(self, data_root: str, split: str = "Testing Set"):
+    def __init__(self, data_root: str, split: str = "test"):
         """
         data_root: path to '.../data/IDRiD'
-        split: 'Training Set' or 'Testing Set' — must match wherever your
-               81 evaluation images actually live.
+        split: 'train' or 'test' (lowercase, matches your Drive folder names)
         """
-        self.seg_root = Path(data_root) / "A. Segmentation"
-        self.img_dir = self._find_dir(self.seg_root / "1. Original Images", split)
-        self.gt_root = self._find_dir(self.seg_root / "2. All Segmentation Groundtruths", split)
+        self.split = split
+        self.img_dir = Path(data_root) / "segmentation" / "images" / split
+        self.mask_dir = Path(data_root) / "segmentation" / "masks" / split
         if not self.img_dir.exists():
             raise FileNotFoundError(f"Image dir not found: {self.img_dir}")
-
-    @staticmethod
-    def _find_dir(parent: Path, split: str) -> Path:
-        """Tolerates ordinal prefixes like 'a. Training Set' vs 'Training Set'."""
-        exact = parent / split
-        if exact.exists():
-            return exact
-        matches = list(parent.glob(f"*{split}*")) if parent.exists() else []
-        return matches[0] if matches else exact
-
-    def _lesion_folder(self, lesion: str) -> Path:
-        name = LESION_SUFFIX[lesion]
-        matches = list(self.gt_root.glob(f"*{name}*"))
-        return matches[0] if matches else self.gt_root / name
+        if not self.mask_dir.exists():
+            raise FileNotFoundError(f"Mask dir not found: {self.mask_dir}")
 
     def _mask_path(self, image_id: str, lesion: str) -> Path:
-        return self._lesion_folder(lesion) / f"{image_id}_{lesion}.tif"
+        return self.mask_dir / LESION_FOLDER[lesion] / f"{image_id}_{lesion}.tif"
 
     def _image_path(self, image_id: str) -> Path:
         for ext in IMG_EXTS:
@@ -122,24 +101,28 @@ class MaskLoader:
         return {l: self.load_lesion_mask(image_id, l, shape) for l in lesion_types}
 
     def discover_image_ids(self) -> List[str]:
-        """Scans the original-images dir, returns sorted list of IDRiD image IDs present."""
+        """Scans the images dir for this split, returns sorted list of IDRiD image IDs."""
         ids = []
         for f in sorted(self.img_dir.iterdir()):
             if f.suffix.lower() in IMG_EXTS:
                 ids.append(f.stem)
+        # numeric sort (IDRiD_55, IDRiD_56, ... not lexicographic)
+        ids.sort(key=lambda s: int(s.split("_")[-1]))
         return ids
 
 
-def freeze_test_ids(data_root: str, split: str, out_path: str = "test_image_ids.json") -> List[str]:
+def freeze_test_ids(data_root: str, split: str = "test", out_path: str = "test_image_ids.json") -> List[str]:
     """
-    Run ONCE, by ONE person. Locks the exact image-ID list everyone uses.
-    Commit the resulting JSON to the repo — nobody regenerates their own.
+    Shreyashree runs this. 
+    Locks the exact image-ID list everyone uses.
+    Commit the resulting JSON to the repo root - nobody regenerates their own.
     """
     loader = MaskLoader(data_root, split)
     ids = loader.discover_image_ids()
     with open(out_path, "w") as f:
         json.dump(ids, f, indent=2)
     print(f"Froze {len(ids)} image IDs -> {out_path}")
+    print(ids)
     return ids
 
 
@@ -150,7 +133,7 @@ def load_frozen_test_ids(path: str = "test_image_ids.json") -> List[str]:
 
 if __name__ == "__main__":
     # Usage: python mask_loader.py <data_root> <split>
-    # example:   python mask_loader.py data/IDRiD "Testing Set"
+    # example: python mask_loader.py "/content/drive/MyDrive/.../data/IDRiD" test
     root = sys.argv[1] if len(sys.argv) > 1 else "data/IDRiD"
-    split = sys.argv[2] if len(sys.argv) > 2 else "Testing Set"
+    split = sys.argv[2] if len(sys.argv) > 2 else "test"
     freeze_test_ids(root, split)
