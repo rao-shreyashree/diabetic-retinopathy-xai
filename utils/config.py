@@ -6,7 +6,7 @@ Everyone imports from here — never hardcode paths in notebooks.
 import os
 
 # ── Drive root (Colab) ──────────────────────────────────────────────────────
-DRIVE_ROOT = "/content/drive/MyDrive/Projects/diabetic retinopathy/diabetic-retinopathy-xai"
+DRIVE_ROOT = "/content/drive/MyDrive/Projects/diabetic-retinopathy-xai"
 
 # ── IDRiD data paths ────────────────────────────────────────────────────────
 IDRID_ROOT        = os.path.join(DRIVE_ROOT, "data/IDRiD")
