@@ -45,7 +45,7 @@ HEATMAP_METHODS = ["gradcam", "lime", "shap"]
 PREDICTIONS_CSV = os.path.join(HEATMAP_DIR, "predictions.csv")
 
 # Frozen test image list
-TEST_IDS_JSON = os.path.join(DRIVE_ROOT, "test_image_ids.json")
+TEST_IDS_JSON = "/content/diabetic-retinopathy-xai/test_image_ids.json"
 
 # ── Model hyperparameters (must match week1_training.ipynb exactly) ──────────
 IMG_SIZE    = 512
