@@ -4,4 +4,5 @@ __pycache__/
 data/
 results/checkpoints/
 results/heatmaps/
-.DS_Storeresults/
+.DS_Store
+results/
