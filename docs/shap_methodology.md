@@ -1,4 +1,7 @@
-# SHAP Methodology —  Generation
+# SHAP Methodology — Week 2 XAI Generation
+
+**Author:** Shravani (Person 2)
+**Module:** `xai/shap_wrapper.py`
 
 ## Method choice: GradientSHAP (not KernelSHAP)
 
@@ -34,9 +37,9 @@ Diagnostic testing was performed to find a stable, sustainable configuration:
 
 | n_samples | background size | time per image | outcome |
 |-----------|-----------------|-----------------|---------|
-| 50        | 20              | —               | kernel crash (memory exhaustion) |
-| 3         | 3               | ~51s            | stable |
-| 5         | 3               | ~166s           | stable but disproportionately slower |
+| 50 | 20 | — | kernel crash (memory exhaustion) |
+| 3 | 3 | ~51s | stable |
+| 5 | 3 | ~166s | stable but disproportionately slower |
 
 A separate diagnostic isolated the cause: a single model forward+backward pass
 takes only ~4 seconds. The gap between this and the observed 51-166s runtimes
@@ -52,11 +55,8 @@ not better.
 
 **Final committed configuration: `n_samples=3`, `background=3`.** This was the
 largest configuration empirically verified as stable on the available hardware.
-The full run (27 images x 2 models = 54 total explanations) completed in
-**11.2 minutes with zero failures**, which exceeded expectations given the
-slower per-image diagnostic timings — likely due to reduced background system
-load and one-time framework warmup costs not present in the smaller diagnostic
-tests.
+The full run (27 images x 2 models = 54 total explanations) completed with
+zero failures.
 
 ## Preprocessing
 
@@ -67,25 +67,27 @@ torchvision) — confirmed necessary by inspecting checkpoint state_dict key
 names (`conv_stem`, `blocks.N.M`, `se.conv_reduce/expand`), which match timm's
 EfficientNet/ResNet naming convention, not torchvision's.
 
+## Normalization and resizing
+
+Heatmaps are resized to the original fundus image resolution **before**
+min-max normalization, not after. Resizing is done in float precision (no
+intermediate uint8 conversion) to avoid lossy rounding. Normalizing as the
+final step guarantees the saved array always has `min=0.0` and `max=1.0`
+exactly, consistent with GradCAM/LIME's output.
+
+Absolute value is taken before normalization, since SHAP attributions can be
+negative (a pixel pushing away from the predicted class). For saliency/fidelity
+comparison against binary lesion masks, magnitude of influence matters, not
+sign.
+
 ## Output contract compliance
 
 - Heatmaps saved as `.npy`, shape `(H, W)` matching the **original** fundus
   image resolution (e.g. 2848x4288), not the model's 512x512 input size
-
-- Min-max normalized to [0, 1] per image
-
-- Absolute value taken before normalization, since SHAP attributions can be
-  negative (pixel pushes away from predicted class) — for saliency/fidelity
-  comparison against binary lesion masks, magnitude of influence matters,
-  not sign
-
+- Min-max normalized to exactly [0, 1] per image
 - Naming: `{model}_shap_{image_id}.npy`, saved to `results/heatmaps/{model}/shap/`
-
-- Explains the model's **predicted** grade, not ground truth, per contract
-
-- Predictions logged to `results/heatmaps/predictions.csv`
-  (image_id, model, predicted_grade, true_grade, confidence)
-
+- Explains the model's **predicted** grade (from the team's shared
+  `predictions.csv`), not ground truth, per contract
 - Zero failures across all 54 runs — no skipped images, no NaN entries
 
 ## Visual sanity check results
@@ -93,34 +95,28 @@ EfficientNet/ResNet naming convention, not torchvision's.
 Spot-checked across multiple cases (highest confidence, lowest confidence,
 and a misclassification):
 
-- **High-confidence correct "healthy" prediction** (IDRiD_80, resnet50,
-  conf=1.00): heatmap nearly blank, correctly finding little to attribute
-  when the model is maximally certain nothing is abnormal.
+- **Highest confidence** (IDRiD_63, resnet50, pred=2 true=2, conf=0.86):
+  correct prediction, two distinct well-defined hot clusters, one near the
+  optic disc, anatomically grounded rather than scattered noise.
+- **Lowest confidence** (IDRiD_77, efficientnetb4, pred=2 true=3, conf=0.34):
+  heatmap is more diffuse/speckled with one slightly stronger cluster near
+  the optic disc, consistent with the model's low certainty translating into
+  less concentrated attribution.
+- **Misclassification** (IDRiD_55, efficientnetb4, pred=2 true=3, conf=0.48):
+  two distinct, fairly well-defined hot regions despite the wrong prediction.
 
-- **Low-confidence correct "severe DR" prediction** (IDRiD_61, efficientnetb4,
-  conf=0.35): heatmap shows multiple distinct hot clusters scattered across
-  the retina, spatially consistent with visible lesion-like spots in the
-  original image.
+Across all spot-checks, attribution consistently lands on plausible retinal
+structures (never on black background/corners, never uniform noise), and the
+spatial pattern varies sensibly with prediction confidence and correctness.
 
-- **Misclassification** (IDRiD_56, efficientnetb4, pred=1 true=0, conf=0.76):
-  heatmap concentrates near the optic disc/macula region, suggesting the
-  model may be reacting to normal anatomical structures and mistaking them
-  for pathology — a plausible explanation for the misclassification.
-
-Across all spot-checks, attribution consistently lands on retinal structures
-(never on black background/corners, never uniform noise), and the spatial
-pattern varies sensibly with prediction confidence and correctness.
-
-## Known limitations / caveats for the writeup
+## Known limitations
 
 - `n_samples=3` is low for GradientSHAP by typical standards (literature often
   uses 50+); this is a deliberate, documented hardware-constrained tradeoff,
   not an oversight. Should be flagged in the paper's limitations section.
-
 - Background sample size (3 images) is small; a larger, more diverse Grade-0
   sample would likely produce smoother, more stable attributions if compute
   resources allow in future work.
-
 - Results have not yet been quantitatively validated against ground-truth
   lesion masks (IoU/Dice) — that comparison is Person 3's fidelity scoring
   step, pending.
