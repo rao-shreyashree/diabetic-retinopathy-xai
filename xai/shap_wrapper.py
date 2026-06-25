@@ -209,9 +209,20 @@ def normalize_and_resize(
 ) -> np.ndarray:
     """
     Applies the LOCKED output contract:
-    - min-max normalize to [0, 1]
     - resize to ORIGINAL image dims (not model input size)
+    - min-max normalize to [0, 1] -- LAST step, so the final array is
+      guaranteed to hit exactly 0.0 and 1.0
     - no per-method normalization differences
+
+    BUG FIX (caught in team review): previous version normalized to [0,1]
+    THEN converted to uint8 and resized with bilinear interpolation. Bilinear
+    interpolation averages neighboring pixels, which smooths out the exact
+    peak value -- so after resizing, max was ~0.97-0.99, not exactly 1.0,
+    while GradCAM/LIME (which normalize AFTER resizing) hit exactly 1.0.
+    Fix: resize the RAW heatmap first (in float, no lossy uint8 round-trip),
+    THEN do min-max normalization as the final step. This guarantees the
+    final saved array always has min=0.0 and max=1.0 exactly, matching
+    GradCAM/LIME's behavior.
 
     original_size: (H, W) of the ORIGINAL image, from load_image_tensor()
     """
@@ -222,22 +233,24 @@ def normalize_and_resize(
     # in the writeup -- it's a real decision, not implicit.
     heatmap = np.abs(heatmap)
 
-    h_min, h_max = heatmap.min(), heatmap.max()
+    # Resize FIRST, in float precision, no lossy uint8 conversion.
+    # Use PIL's float-mode resize via numpy -> PIL "F" mode (32-bit float),
+    # which avoids the uint8 round-trip that caused the original bug.
+    target_h, target_w = original_size
+    heatmap_img = Image.fromarray(heatmap.astype(np.float32), mode="F")
+    heatmap_resized_img = heatmap_img.resize((target_w, target_h), Image.BILINEAR)
+    heatmap_resized = np.array(heatmap_resized_img).astype(np.float32)
+
+    # Normalize LAST -- guarantees exact [0, 1] bounds on the final array
+    h_min, h_max = heatmap_resized.min(), heatmap_resized.max()
     if h_max - h_min < 1e-8:
         # Degenerate case: completely flat attribution (shouldn't normally
         # happen, but guard against divide-by-zero). Treat as failure --
         # caller should skip this file per the "missing file = NaN" rule.
         raise ValueError("Degenerate heatmap: max == min, cannot normalize.")
-    heatmap_norm = (heatmap - h_min) / (h_max - h_min)
+    heatmap_final = (heatmap_resized - h_min) / (h_max - h_min)
 
-    # Resize to original resolution using PIL (bilinear, standard for
-    # continuous-valued saliency maps -- NEAREST is only for masks)
-    target_h, target_w = original_size
-    heatmap_img = Image.fromarray((heatmap_norm * 255).astype(np.uint8))
-    heatmap_resized = heatmap_img.resize((target_w, target_h), Image.BILINEAR)
-    heatmap_final = np.array(heatmap_resized).astype(np.float32) / 255.0
-
-    return heatmap_final
+    return heatmap_final.astype(np.float32)
 
 
 def save_heatmap(
