@@ -1,8 +1,5 @@
 # SHAP Methodology — Week 2 XAI Generation
 
-**Author:** Shravani (Person 2)
-**Module:** `xai/shap_wrapper.py`
-
 ## Method choice: GradientSHAP (not KernelSHAP)
 
 KernelSHAP was considered but rejected. It approximates Shapley values via
