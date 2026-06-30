@@ -119,20 +119,22 @@ def run_fidelity_scoring(
 
     records = []
     for img_id in test_ids:
-
-        matches = [
-            f for f in os.listdir(heatmap_folder)
-            if img_id in f and f.endswith(".npy")
-        ]
-
-        if len(matches) != 1:
-            print(f"SKIP {img_id}: expected 1 heatmap, found {len(matches)}")
-            continue
-
-        hmap_path = os.path.join(heatmap_folder, matches[0])
-        if not os.path.exists(hmap_path):
-            print(f"SKIP {img_id}: heatmap not found at {hmap_path}")
-            continue
+        # bare: IDRiD_55.npy
+        # prefixed: efficientnetb4_shap_IDRiD_55.npy
+        bare_path = os.path.join(heatmap_folder, f"{img_id}.npy")
+        if os.path.exists(bare_path):
+            hmap_path = bare_path
+        else:
+            pattern = os.path.join(heatmap_folder, f"*{model_name}*{method_name}*{img_id}.npy")
+            matches = glob.glob(pattern)
+            if len(matches) == 1:
+                hmap_path = matches[0]
+            elif len(matches) == 0:
+                print(f"SKIP {img_id}: heatmap not found (tried {bare_path} and pattern {pattern})")
+                continue
+            else:
+                print(f"SKIP {img_id}: ambiguous match, found {len(matches)} files: {matches}")
+                continue
 
         heatmap = np.load(hmap_path)
         fov_mask = get_fundus_mask(os.path.join(ORIG_IMG_DIR, f"{img_id}.jpg"))
