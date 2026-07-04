@@ -1,0 +1,8 @@
+model,method,EX,HE,MA,SE
+efficientnetb4,gradcam,0.0107,0.0096,0.0014,0.0068
+efficientnetb4,lime,0.0092,0.0107,0.0013,0.006
+efficientnetb4,shap,0.0162,0.0094,0.0015,0.0029
+resnet50,gradcam,0.0181,0.0188,0.0016,0.0174
+resnet50,lime,0.0149,0.0132,0.0015,0.0024
+resnet50,shap,0.0139,0.0095,0.0018,0.0033
+vit_b16,attention_rollout,0.0231,0.0133,0.0017,0.0048
