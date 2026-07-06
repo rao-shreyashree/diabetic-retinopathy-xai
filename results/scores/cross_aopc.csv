@@ -1,0 +1,8 @@
+model,method,deletion_auc,insertion_auc
+efficientnetb4,gradcam,0.4491,0.4167
+efficientnetb4,lime,0.4441,0.4299
+efficientnetb4,shap,0.4712,0.4146
+resnet50,gradcam,0.636,0.6401
+resnet50,lime,0.6247,0.6414
+resnet50,shap,0.6089,0.6239
+vit_b16,attention_rollout,0.2574,0.3699
